@@ -3,17 +3,293 @@
 **目的:** 存放所有用于模拟、分析和可视化的代码。代码的质量是评分的重要组成部分。
 
 **内容:**
-- **main_simulation.py:** 主程序。负责设置参数、调用其他模块的函数、控制整个模拟流程。
-- **numerical_methods.py:** 核心算法。实现具体的数值方法，例如龙格-库塔法、Crank-Nicolson、Metropolis算法等。这个模块应该具有通用性，不依赖于特定的模拟场景。
-- **data_analysis.py:** 数据分析。存放用于处理 raw_data 的函数，例如计算平均值、误差、傅里叶变换、拟合曲线等。
-- **visualization.py:** 可视化。存放所有绘图函数。这些函数应该接收数据作为输入，然后生成图表。这使得绘图逻辑与计算逻辑分离。
-- **utils.py (可选):** 存放一些通用的辅助函数，比如读取配置文件、计时等。
-- **requirements.txt (可选):** 项目依赖。通过 pip freeze > requirements.txt 命令生成，确保任何人都可以在新环境中复现你们的计算环境。
-- **README.md:** 代码说明书。必须清晰地说明：
-  - 每个代码文件的功能。
-  - 如何配置环境 (pip install -r requirements.txt)。
-  - 如何运行主程序 (python main_simulation.py)。
+#芯片热传导问题的数值求解与方法对比研究
+### 1. `main_simulation.py`（主程序）
+```python
+import time
+from numerical_methods import solve_heat_jacobi, solve_heat_sor
+from visualization import plot_temperature
+
+def main():
+    # 模拟参数
+    N = 64        # 网格数
+    L = 1.0       # 芯片边长(m)
+    tol = 1e-4    # 收敛容差
+
+    print("求解芯片热传导问题...")
+    print(f"网格尺寸: {N}×{N}，芯片边长: {L}m")
+    print(f"收敛容差: {tol}")
+
+    # 使用Jacobi方法求解
+    print("\n1. Jacobi迭代法:")
+    start_time = time.time()
+    T_jacobi, iter_jacobi, conv_jacobi, x, y, dx = solve_heat_jacobi(N, L, tol)
+    time_jacobi = time.time() - start_time
+    print(f"   收敛于 {iter_jacobi} 次迭代")
+    print(f"   耗时: {time_jacobi:.3f} 秒")
+
+    # 使用SOR方法求解
+    print("\n2. SOR迭代法 (ω=1.8):")
+    start_time = time.time()
+    T_sor, iter_sor, conv_sor, x, y, dx = solve_heat_sor(N, L, 1.8, tol)
+    time_sor = time.time() - start_time
+    print(f"   收敛于 {iter_sor} 次迭代")
+    print(f"   耗时: {time_sor:.3f} 秒")
+
+    # 性能对比
+    print("\n3. 方法性能对比:")
+    print(f"   Jacobi: {iter_jacobi} 次迭代, {time_jacobi:.3f}s")
+    print(f"   SOR:    {iter_sor} 次迭代, {time_sor:.3f}s")
+    print(f"   加速比: 迭代次数 {iter_jacobi / iter_sor:.1f}倍, 时间 {time_jacobi / time_sor:.2f}倍")
+
+    # 绘制温度分布
+    plot_temperature(T_jacobi, x, y, dx, "Jacobi方法")
+    plot_temperature(T_sor, x, y, dx, "SOR方法")
+
+if __name__ == "__main__":
+    main()
+```
+
+### 2. `numerical_methods.py`（核心算法）
+```python
+import numpy as np
+
+def solve_heat_jacobi(N, L=1.0, tol=1e-5):
+    """使用Jacobi迭代法求解芯片热传导问题"""
+    dx = L / (N - 1)
+    x = np.linspace(0, L, N)
+    y = np.linspace(0, L, N)
+    X, Y = np.meshgrid(x, y)
+
+    # 初始化温度场
+    T = np.zeros((N, N)) + 300  # 初始温度设为底部恒温值
+
+    iterations = 0
+    max_iter = 10000
+    convergence_history = []
+
+    while iterations < max_iter:
+        T_old = T.copy()
+
+        # Jacobi迭代（内部点）
+        for i in range(1, N - 1):
+            for j in range(1, N - 1):
+                # 计算热源
+                q = 100 * np.exp(-((X[i, j] - 0.5) ** 2 + (Y[i, j] - 0.7) ** 2) / (2 * 0.1 ** 2))
+                # 热传导方程离散形式
+                T[i, j] = 0.25 * (T[i + 1, j] + T[i - 1, j] + T[i, j + 1] + T[i, j - 1] + dx ** 2 * q)
+
+        # 处理非齐次边界条件
+        T[0, :] = 300                          # 底部：恒温边界 T=300K
+        T[:, -1] = 300 + 20 * y                # 右侧：T(1,y)=300+20y
+        T[1, :] = T[2, :] - 10 * dx * np.sin(2 * np.pi * y)  # 左侧：热流边界
+        T[-2, :] = (T[-3, :] + 10 * dx * 310) / (1 + 5 * dx)  # 顶部：对流边界
+
+        # 计算收敛性
+        max_change = np.max(np.abs(T - T_old))
+        convergence_history.append(max_change)
+        iterations += 1
+
+        if max_change < tol:
+            break
+
+    return T, iterations, convergence_history, x, y, dx
+
+def solve_heat_sor(N, L=1.0, omega=1.8, tol=1e-5):
+    """使用SOR迭代法求解芯片热传导问题"""
+    dx = L / (N - 1)
+    x = np.linspace(0, L, N)
+    y = np.linspace(0, L, N)
+    X, Y = np.meshgrid(x, y)
+
+    # 初始化温度场
+    T = np.zeros((N, N)) + 300  # 初始温度设为底部恒温值
+
+    iterations = 0
+    max_iter = 10000
+    convergence_history = []
+
+    while iterations < max_iter:
+        T_old = T.copy()
+
+        # SOR迭代（内部点）
+        for i in range(1, N - 1):
+            for j in range(1, N - 1):
+                # 计算热源
+                q = 100 * np.exp(-((X[i, j] - 0.5) ** 2 + (Y[i, j] - 0.7) ** 2) / (2 * 0.1 ** 2))
+                # SOR迭代公式
+                r_ij = 0.25 * (T[i + 1, j] + T[i - 1, j] + T[i, j + 1] + T[i, j - 1] + dx ** 2 * q)
+                T[i, j] = (1 - omega) * T[i, j] + omega * r_ij
+
+        # 处理非齐次边界条件
+        T[0, :] = 300                          # 底部：恒温边界 T=300K
+        T[:, -1] = 300 + 20 * y                # 右侧：T(1,y)=300+20y
+        T[1, :] = T[2, :] - 10 * dx * np.sin(2 * np.pi * y)  # 左侧：热流边界
+        T[-2, :] = (T[-3, :] + 10 * dx * 310) / (1 + 5 * dx)  # 顶部：对流边界
+
+        # 计算收敛性
+        max_change = np.max(np.abs(T - T_old))
+        convergence_history.append(max_change)
+        iterations += 1
+
+        if max_change < tol:
+            break
+
+    return T, iterations, convergence_history, x, y, dx
+```
+
+### 3. `visualization.py`（可视化）
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+
+# 设置中文字体
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['mathtext.fontset'] = 'cm'
+
+def plot_temperature(T, x, y, dx, method_name):
+    """绘制温度分布与热流场，增加温度棒"""
+    fig = plt.figure(figsize=(14, 6))  # 增加画布宽度以容纳温度棒
+
+    # 3D温度分布
+    ax1 = fig.add_subplot(121, projection='3d')
+    X, Y = np.meshgrid(x, y)
+    surf = ax1.plot_surface(X, Y, T, cmap=cm.jet, alpha=0.8)
+    
+    ax1.set_xlabel('X (m)')
+    ax1.set_ylabel('Y (m)')
+    ax1.set_zlabel('温度 (K)')
+    ax1.set_title(f'芯片温度分布\n({method_name})')
+    
+    # 添加温度棒，设置位置和大小
+    cbar_ax = fig.add_axes([0.91, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
+    fig.colorbar(surf, cax=cbar_ax, label='温度 (K)')
+
+    # 温度等值线与热流场
+    ax2 = fig.add_subplot(122)
+    X, Y = np.meshgrid(x, y)
+    # 计算热流场（负温度梯度）
+    Ty, Tx = np.gradient(-T, dx)
+    # 绘制温度等值线
+    levels = np.linspace(T.min(), T.max(), 15)
+    contour = ax2.contour(X, Y, T, levels=levels, colors='red', linestyles='solid')
+    ax2.clabel(contour, inline=True, fontsize=6)
+    # 绘制热流场流线
+    ax2.streamplot(X, Y, Tx, Ty, density=1.5, color='blue', linewidth=1, arrowsize=1.5)
+    # 标记热源位置
+    heat_source = 100 * np.exp(-((X - 0.5) ** 2 + (Y - 0.7) ** 2) / (2 * 0.1 ** 2))
+    ax2.contour(X, Y, heat_source, levels=[5], colors='black', linestyles='dashed')
+    ax2.text(0.5, 0.7, '热源', fontsize=9, ha='center')
+
+    ax2.set_xlabel('X (m)')
+    ax2.set_ylabel('Y (m)')
+    ax2.set_title(f'温度等值线与热流场\n({method_name})')
+    ax2.set_aspect('equal')
+    
+    # 为2D图添加温度棒
+    cbar_ax2 = fig.add_axes([0.91, 0.15, 0.02, 0.3])
+    fig.colorbar(contour, cax=cbar_ax2, label='温度 (K)')
+
+    plt.tight_layout()
+    plt.show()
+```
+
+### 4. `data_analysis.py`（数据分析）
+```python
+import numpy as np
+
+def calculate_error(T1, T2):
+    """计算两个温度场之间的误差"""
+    return np.max(np.abs(T1 - T2))
+
+def analyze_convergence(history, method_name):
+    """分析收敛历史"""
+    iterations = len(history)
+    final_error = history[-1]
+    
+    print(f"\n{method_name}收敛分析:")
+    print(f"总迭代次数: {iterations}")
+    print(f"最终误差: {final_error:.6e}")
+    
+    # 计算收敛率（最后10%迭代的平均下降率）
+    if iterations > 10:
+        last_10pct = int(iterations * 0.1)
+        rate = np.mean(np.diff(np.log(history[-last_10pct:])))
+        print(f"收敛率: {rate:.4f} (指数衰减率)")
+    
+    return {
+        'iterations': iterations,
+        'final_error': final_error,
+        'convergence_rate': rate if iterations > 10 else None
+    }
+```
+
+### 5. `utils.py`（辅助工具）
+```python
+import time
+
+def timer_decorator(func):
+    """计时装饰器"""
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        print(f"{func.__name__} 耗时: {end_time - start_time:.3f}秒")
+        return result
+    return wrapper
+```
+
+### 6. `requirements.txt`（项目依赖）
+```
+numpy
+matplotlib
+```
+
+### 7. `README.md`（代码说明书）
+# 芯片热传导数值模拟项目
+
+## 项目结构
+- `main_simulation.py`: 主程序，控制模拟流程
+- `numerical_methods.py`: 数值求解算法（Jacobi和SOR迭代法）
+- `visualization.py`: 可视化绘图函数
+- `data_analysis.py`: 数据分析工具
+- `utils.py`: 辅助工具函数
+- `requirements.txt`: 项目依赖
+
+## 环境配置
+1. 安装Python 3.7+
+2. 安装依赖库：
+```bash
+pip install -r requirements.txt
+```
+
+## 运行过程
+运行过程说明
+参数输出：
+程序开始后会显示模拟参数（网格尺寸、芯片边长、收敛容差等）。
+求解过程：
+先运行 Jacobi 迭代法，显示迭代次数和耗时；
+再运行 SOR 迭代法，同样显示迭代次数和耗时；
+最后输出两种方法的性能对比（加速比）。
+可视化窗口：
+自动弹出两个图形窗口，分别展示 Jacobi 和 SOR 方法的温度分布：
+左侧为 3D 温度曲面图（含温度棒）；
+右侧为 2D 等值线与热流场图（含温度棒）。
+
+## 功能说明
+1. **主程序**：设置模拟参数，调用数值方法求解热传导方程，分析结果并可视化
+2. **数值方法**：实现了Jacobi和SOR迭代法求解非齐次边界条件下的热传导方程
+3. **可视化**：生成3D温度分布图和2D温度等值线+热流场图
+4. **数据分析**：计算误差和收敛率等指标
+5. **辅助工具**：提供计时装饰器等实用功能
 
 
-## 注意：
-你也可以不按照预设的目录结构，按照自己的喜好组织代码，只要能够清晰地说明每个文件的功能即可。
+### 模块化优势
+1. **代码复用**：`numerical_methods.py`中的求解器可用于其他热传导问题
+2. **可维护性**：功能分离，便于修改和扩展
+3. **协作开发**：不同模块可由不同人员并行开发
+4. **测试方便**：各模块可独立测试
+
