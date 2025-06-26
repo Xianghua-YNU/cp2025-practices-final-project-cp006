@@ -136,3 +136,19 @@ def solve_heat_equation(Nx, dx, dt, T, D, v, u0):
         u_history.append(u.copy())
     
     return np.array(u_history)
+
+#波动方程
+
+# 前两层解计算（显式有限差分法）
+u_prev = u_prev_prev + 0.5 * stability_factor**2 * (
+    np.roll(u_prev_prev, -1) - 2*u_prev_prev + np.roll(u_prev_prev, 1)
+)  # 半步长公式
+
+# 递推公式（二阶中心差分）
+u_current = 2 * u[n] - u[n-1] + stability_factor**2 * (
+    np.roll(u[n], -1, axis=-1) - 2*u[n] + np.roll(u[n], 1, axis=-1)
+)  # 波动方程差分形式
+
+# 边界条件：两端固定为0
+u_prev[0], u_prev[-1] = 0, 0
+u_current[[0, -1]] = 0
