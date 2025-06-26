@@ -209,7 +209,7 @@ plt.grid(True)
 plt.tight_layout()
 plt.savefig('nonhomogeneous_dirichlet_evolution.png')
 plt.show()
-#输运方程求解
+#波动方程求解
 
 import numpy as np
 import matplotlib.pyplot as plt
