@@ -47,14 +47,13 @@ pip install -r requirements.txt
 2. **可维护性**：功能分离，便于修改和扩展
 3. **协作开发**：不同模块可由不同人员并行开发
 4. **测试方便**：各模块可独立测试
-###芯片热传导项目完整代码预览（方便读者运行复现）
+### 芯片热传导项目完整代码预览（方便读者运行复现）
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import time
 from matplotlib import cm  # 补充cm的导入
 
-# 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 plt.rcParams['mathtext.fontset'] = 'cm'
@@ -67,7 +66,6 @@ def solve_heat_jacobi(N, L=1.0, tol=1e-5):
     y = np.linspace(0, L, N)
     X, Y = np.meshgrid(x, y)
 
-    # 初始化温度场
     T = np.zeros((N, N)) + 300  # 初始温度设为底部恒温值
 
     iterations = 0
@@ -113,7 +111,7 @@ def solve_heat_sor(N, L=1.0, omega=1.8, tol=1e-5):
     y = np.linspace(0, L, N)
     X, Y = np.meshgrid(x, y)
 
-    # 初始化温度场
+
     T = np.zeros((N, N)) + 300  # 初始温度设为底部恒温值
 
     iterations = 0
