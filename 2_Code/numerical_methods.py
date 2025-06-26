@@ -86,3 +86,53 @@ def solve_heat_sor(N, L=1.0, omega=1.8, tol=1e-5):
             break
 
     return T, iterations, convergence_history, x, y, dx
+
+输运方程隐式格式求解、边界条件处理及稳定性验证研究
+
+import numpy as np
+from scipy.linalg import solve_banded
+
+def build_coefficients(Nx, dx, dt, D, v):
+    """构建热传导方程的三对角系数矩阵"""
+    alpha = D * dt / dx** 2  # 扩散项系数
+    beta = v * dt / (2 * dx)  # 对流项系数
+    
+    # 三对角矩阵的对角线元素
+    main_diag = np.full(Nx, 1 + 2 * alpha, dtype=float)
+    off_diag = np.full(Nx - 1, -alpha, dtype=float)
+    
+    # 下对角线（对流项）
+    lower_diag = np.full(Nx - 1, -beta, dtype=float)
+    # 上对角线（对流项）
+    upper_diag = np.full(Nx - 1, beta, dtype=float)
+    
+    # 合并所有对角线
+    a_band = np.zeros((3, Nx))
+    a_band[0, 1:] = upper_diag  # 上对角线从第二个元素开始
+    a_band[1, :] = main_diag  # 主对角线
+    a_band[2, :-1] = lower_diag  # 下对角线到倒数第二个元素
+    
+    return a_band
+
+def solve_heat_equation(Nx, dx, dt, T, D, v, u0):
+    """使用Crank-Nicolson方法求解热传导方程"""
+    Nt = int(T / dt)
+    u = u0.copy()
+    a_band = build_coefficients(Nx, dx, dt, D, v)
+    u_history = [u.copy()]
+    
+    # 时间迭代
+    for n in range(1, Nt + 1):
+        # 右端向量 (基于前一时间步的解)
+        b = u.copy()
+        
+        # 处理边界条件：Dirichlet边界（左边界u=1，右边界u=0）
+        b[0] = 1  # u(0) = 1 kg/m³
+        b[-1] = 0  # u(L) = 0 kg/m³
+        
+        # 求解三对角矩阵系统
+        solution = solve_banded((1, 1), a_band, b)
+        u[:] = solution
+        u_history.append(u.copy())
+    
+    return np.array(u_history)
