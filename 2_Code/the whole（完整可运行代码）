@@ -1,0 +1,482 @@
+# 本文件用于存放完整可运行代码，方便代码的核验复现（共三个子项目）
+##波动方程（子项目1）
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+# 设置中文字体支持
+plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC"]
+plt.rcParams["axes.unicode_minus"] = False  # 正确显示负号
+
+# 参数设置
+wave_speed = 1.0
+space_length = 1.0
+total_time = 2.0
+grid_points = 100
+time_steps = 400
+
+dx = space_length / (grid_points - 1)
+dt = total_time / time_steps
+stability_factor = wave_speed * dt / dx
+
+if stability_factor > 1:
+    raise ValueError("稳定性条件不满足！")
+
+# 初始条件：高斯脉冲
+x = np.linspace(0, space_length, grid_points)
+initial_displacement = np.exp(-((x - 0.5)/0.15)**2)
+initial_velocity = np.zeros_like(x)
+
+# 计算前两层解
+u_prev_prev = initial_displacement.copy()
+u_prev = u_prev_prev + 0.5 * stability_factor**2 * (
+    np.roll(u_prev_prev, -1) - 2*u_prev_prev + np.roll(u_prev_prev, 1)
+)
+u_prev[0], u_prev[-1] = 0, 0
+
+# 预计算所有时间层
+u = np.zeros((time_steps, grid_points))
+u[0] = u_prev_prev
+u[1] = u_prev
+
+for n in range(1, time_steps-1):
+    u_current = 2 * u[n] - u[n-1] + stability_factor**2 * (
+        np.roll(u[n], -1, axis=-1) - 2*u[n] + np.roll(u[n], 1, axis=-1)
+    )
+    u_current[[0, -1]] = 0
+    u[n+1] = u_current
+
+# 动画配置
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.set_xlim(0, space_length)
+ax.set_ylim(-1.1, 1.1)
+ax.set_xlabel('位置 X ( m)')
+ax.set_ylabel('位移 Y ( m)')
+ax.set_title('波动方程动态解')
+ax.grid(True, linestyle='--', alpha=0.7)
+
+line, = ax.plot(x, u[0], 'r-', lw=2)
+
+def animate(frame):
+    line.set_ydata(u[frame])
+    return line,
+
+ani = FuncAnimation(fig, animate, frames=time_steps, interval=10, blit=True, repeat=True)
+plt.show()
+## 输运方程（子项目2）
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.linalg import solve_banded
+import matplotlib.font_manager as fm
+
+# ------------------- 优化字体设置 ------------------- #
+# 检测系统中可用的中文字体
+def get_available_chinese_font():
+    available_fonts = {f.name for f in fm.fontManager.ttflist}
+    chinese_fonts = [
+        'SimHei',       # Windows常用黑体
+        'Microsoft YaHei',  # Windows雅黑
+        'SimSun',       # 宋体
+        'KaiTi',        # 楷体
+        'WenQuanYi Micro Hei',  # Linux常用
+        'Heiti TC'       # macOS黑体
+    ]
+    for font in chinese_fonts:
+        if font in available_fonts:
+            return font
+    return None
+
+# 设置字体
+available_font = get_available_chinese_font()
+if available_font:
+    plt.rcParams["font.family"] = available_font
+    print(f"使用可用字体: {available_font}")
+else:
+    plt.rcParams["font.family"] = "sans-serif"
+    print("警告: 未找到中文字体，使用默认字体")
+plt.rcParams["axes.unicode_minus"] = False  # 正确显示负号
+
+# ------------------- 其他设置 ------------------- #
+# 参数设置（添加单位注释）
+L = 1.0  # 空间长度（m）
+Nx = 50  # 空间离散点数
+dx = L / (Nx - 1)  # 空间步长（m）
+dt = 0.01  # 时间步长（s）
+T = 1.0  # 总时间（s）
+Nt = int(T / dt)  # 时间步数
+D = 0.01  # 扩散系数（m²/s）
+v = 0.1  # 对流速度（m/s）
+
+# 初始条件（高斯分布）
+x = np.linspace(0, L, Nx)
+u0 = np.exp(-((x - L / 2) ** 2) / (2 * 0.1 ** 2))  # 初始浓度分布（kg/m³）
+u = u0.copy()
+
+
+# 构建系数矩阵
+def build_coefficients(Nx, dx, dt, D, v):
+    alpha = D * dt / dx ** 2  # 扩散项系数
+    beta = v * dt / (2 * dx)  # 对流项系数
+
+    # 三对角矩阵的对角线元素
+    main_diag = np.full(Nx, 1 + 2 * alpha, dtype=float)
+    off_diag = np.full(Nx - 1, -alpha, dtype=float)
+
+    # 下对角线（对流项）
+    lower_diag = np.full(Nx - 1, -beta, dtype=float)
+    # 上对角线（对流项）
+    upper_diag = np.full(Nx - 1, beta, dtype=float)
+
+    # 合并所有对角线
+    a_band = np.zeros((3, Nx))
+    a_band[0, 1:] = upper_diag  # 上对角线从第二个元素开始
+    a_band[1, :] = main_diag  # 主对角线
+    a_band[2, :-1] = lower_diag  # 下对角线到倒数第二个元素
+
+    return a_band
+
+
+# 构建系数矩阵
+a_band = build_coefficients(Nx, dx, dt, D, v)
+
+# 存储解用于可视化
+u_history = []
+u_history.append(u.copy())
+
+# 时间迭代
+for n in range(1, Nt + 1):
+    # 右端向量 (基于前一时间步的解)
+    b = u.copy()
+
+    # 处理边界条件
+    # Dirichlet 边界条件示例：左边界 u=1，右边界 u=0
+    b[0] = 1  # u(0) = 1 kg/m³
+    b[-1] = 0  # u(L) = 0 kg/m³
+
+    # 构建三对角矩阵系统 Au^{n+1} = b
+    solution = solve_banded((1, 1), a_band, b)
+    u[:] = solution
+    u_history.append(u.copy())
+
+# 转换为numpy数组以便后续处理
+u_history = np.array(u_history)
+
+# ------------------- 可视化函数 ------------------- #
+def plot_concentration_evolution():
+    plt.figure(figsize=(10, 6))
+    for i in range(0, Nt + 1, max(Nt // 10, 1)):
+        plt.plot(x, u_history[i], label=f't={i * dt:.2f} s')
+    plt.xlabel('位置 x (m)')
+    plt.ylabel('浓度 u (kg/m$^3$)')
+    plt.title('浓度分布随时间的演化（Crank-Nicolson 方法）')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('concentration_evolution.png')
+    plt.show()
+
+def plot_error_analysis():
+    # 纯扩散解析解
+    def pure_diffusion_analytical(x, t, D):
+        sig = np.sqrt(4 * D * t)
+        if t == 0:
+            return np.exp(-((x - L / 2) ** 2) / (2 * 0.1 ** 2))
+        return np.exp(-((x - L / 2) ** 2) / (2 * D * t)) / (sig * np.sqrt(np.pi))
+
+    # 重新初始化
+    u = u0.copy()
+    u_history = [u.copy()]
+    v_pure = 0.0
+    a_band_pure = build_coefficients(Nx, dx, dt, D, v_pure)
+
+    for n in range(1, Nt + 1):
+        b = u.copy()
+        b[0] = 1
+        b[-1] = 0
+        solution = solve_banded((1, 1), a_band_pure, b)
+        u[:] = solution
+        u_history.append(u.copy())
+    u_history_pure = np.array(u_history)
+
+    # 计算MSE
+    def mse(u_num, u_exact):
+        return np.mean((u_num - u_exact) ** 2)
+
+    mse_list = []
+    times = np.arange(0, T + dt, dt)
+    for i, t in enumerate(times):
+        u_exact = pure_diffusion_analytical(x, t, D)
+        mse_val = mse(u_history_pure[i], u_exact)
+        mse_list.append(mse_val)
+
+    # 绘制误差曲线
+    plt.figure(figsize=(8, 5))
+    plt.plot(times, mse_list, label='MSE', color='blue')
+    plt.xlabel('时间 t (s)')
+    plt.ylabel('均方误差 (MSE) (kg/m$^3$)$^2$')
+    plt.title('纯扩散场景下 Crank-Nicolson 方法的误差分析')
+    plt.yscale('log')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('error_analysis_pure_diffusion.png')
+    plt.show()
+
+def plot_cfl_verification():
+    # CFL 条件验证
+    dt_values = [0.1, 0.01, 0.001]  # 包括不稳定的dt=0.1（单位：s）
+    colors = ['red', 'blue', 'green']
+    labels = [f'dt={dt_val} s' for dt_val in dt_values]
+
+    plt.figure(figsize=(8, 5))
+    for dt_val, color, label in zip(dt_values, colors, labels):
+        # 重新初始化
+        u = u0.copy()
+        u_history = [u.copy()]
+        Nt_val = int(T / dt_val)
+        a_band = build_coefficients(Nx, dx, dt_val, D, v)
+
+        for n in range(1, Nt_val + 1):
+            b = u.copy()
+            b[0] = 1
+            b[-1] = 0
+            solution = solve_banded((1, 1), a_band, b)
+            u[:] = solution
+            u_history.append(u.copy())
+
+        u_final = u_history[-1]
+        plt.plot(x, u_final, color=color, label=label)
+
+    plt.xlabel('位置 x (m)')
+    plt.ylabel('浓度 u (kg/m$^3$)')
+    plt.title('不同时间步长下的稳态浓度分布')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('cfl_condition_verification.png')
+    plt.show()
+
+def plot_nonhomogeneous_boundary():
+    # 非齐次边界条件影响分析
+    def linear_dirichlet(t):
+        return t  # 左边界浓度随时间线性增加（kg/m³）
+
+    # 重新初始化
+    u = u0.copy()
+    u_history = [u.copy()]
+
+    for n in range(1, Nt + 1):
+        t = n * dt
+        b = u.copy()
+        # Dirichlet 左边界：u= t, 右边界 u=0
+        b[0] = linear_dirichlet(t)
+        b[-1] = 0
+        solution = solve_banded((1, 1), a_band, b)
+        u[:] = solution
+        u_history.append(u.copy())
+
+    u_history = np.array(u_history)
+
+    # 绘制浓度分布随时间演化（非齐次边界）
+    plt.figure(figsize=(10, 6))
+    for i in range(0, Nt + 1, max(Nt // 10, 1)):
+        plt.plot(x, u_history[i], label=f't={i * dt:.2f} s')
+    plt.xlabel('位置 x (m)')
+    plt.ylabel('浓度 u (kg/m$^3$)')
+    plt.title('非齐次 Dirichlet 边界条件下浓度分布随时间的演化')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('nonhomogeneous_dirichlet_evolution.png')
+    plt.show()
+
+# ------------------- 执行绘图 ------------------- #
+plot_concentration_evolution()
+plot_error_analysis()
+plot_cfl_verification()
+plot_nonhomogeneous_boundary()
+## 芯片热传导问题（子项目3）
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import time
+from matplotlib import cm  # 补充cm的导入
+
+# 设置中文字体
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['mathtext.fontset'] = 'cm'
+
+
+def solve_heat_jacobi(N, L=1.0, tol=1e-5):
+    """使用Jacobi迭代法求解芯片热传导问题"""
+    dx = L / (N - 1)
+    x = np.linspace(0, L, N)
+    y = np.linspace(0, L, N)
+    X, Y = np.meshgrid(x, y)
+
+    # 初始化温度场
+    T = np.zeros((N, N)) + 300  # 初始温度设为底部恒温值
+
+    iterations = 0
+    max_iter = 10000
+    convergence_history = []
+
+    while iterations < max_iter:
+        T_old = T.copy()
+
+        # Jacobi迭代（内部点）
+        for i in range(1, N - 1):
+            for j in range(1, N - 1):
+                # 计算热源
+                q = 100 * np.exp(-((X[i, j] - 0.5) ** 2 + (Y[i, j] - 0.7) ** 2) / (2 * 0.1 ** 2))
+                # 热传导方程离散形式
+                T[i, j] = 0.25 * (T[i + 1, j] + T[i - 1, j] + T[i, j + 1] + T[i, j - 1] + dx ** 2 * q)
+
+        # 处理非齐次边界条件
+        # 底部：恒温边界 T=300K
+        T[0, :] = 300
+        # 右侧：T(1,y)=300+20y
+        T[:, -1] = 300 + 20 * y
+        # 左侧：热流边界 ∂T/∂x=10sin(2πy)
+        T[1, :] = T[2, :] - 10 * dx * np.sin(2 * np.pi * y)
+        # 顶部：对流边界 ∂T/∂y +5(T-310)=0
+        T[-2, :] = (T[-3, :] + 10 * dx * 310) / (1 + 5 * dx)
+
+        # 计算收敛性
+        max_change = np.max(np.abs(T - T_old))
+        convergence_history.append(max_change)
+        iterations += 1
+
+        if max_change < tol:
+            break
+
+    return T, iterations, convergence_history, x, y, dx  # 返回dx
+
+
+def solve_heat_sor(N, L=1.0, omega=1.8, tol=1e-5):
+    """使用SOR迭代法求解芯片热传导问题"""
+    dx = L / (N - 1)
+    x = np.linspace(0, L, N)
+    y = np.linspace(0, L, N)
+    X, Y = np.meshgrid(x, y)
+
+    # 初始化温度场
+    T = np.zeros((N, N)) + 300  # 初始温度设为底部恒温值
+
+    iterations = 0
+    max_iter = 10000
+    convergence_history = []
+
+    while iterations < max_iter:
+        T_old = T.copy()
+
+        # SOR迭代（内部点）
+        for i in range(1, N - 1):
+            for j in range(1, N - 1):
+                # 计算热源
+                q = 100 * np.exp(-((X[i, j] - 0.5) ** 2 + (Y[i, j] - 0.7) ** 2) / (2 * 0.1 ** 2))
+                # SOR迭代公式
+                r_ij = 0.25 * (T[i + 1, j] + T[i - 1, j] + T[i, j + 1] + T[i, j - 1] + dx ** 2 * q)
+                T[i, j] = (1 - omega) * T[i, j] + omega * r_ij
+
+        # 处理非齐次边界条件
+        # 底部：恒温边界 T=300K
+        T[0, :] = 300
+        # 右侧：T(1,y)=300+20y
+        T[:, -1] = 300 + 20 * y
+        # 左侧：热流边界 ∂T/∂x=10sin(2πy)
+        T[1, :] = T[2, :] - 10 * dx * np.sin(2 * np.pi * y)
+        # 顶部：对流边界 ∂T/∂y +5(T-310)=0
+        T[-2, :] = (T[-3, :] + 10 * dx * 310) / (1 + 5 * dx)
+
+        # 计算收敛性
+        max_change = np.max(np.abs(T - T_old))
+        convergence_history.append(max_change)
+        iterations += 1
+
+        if max_change < tol:
+            break
+
+    return T, iterations, convergence_history, x, y, dx  # 返回dx
+
+
+def plot_temperature(T, x, y, dx, method_name):
+    """绘制温度分布与热流场，增加dx参数"""
+    fig = plt.figure(figsize=(12, 5))
+
+    # 3D温度分布
+    ax1 = fig.add_subplot(121, projection='3d')
+    X, Y = np.meshgrid(x, y)
+    surf = ax1.plot_surface(X, Y, T, cmap=cm.jet, alpha=0.8)
+    ax1.set_xlabel('X (m)')
+    ax1.set_ylabel('Y (m)')
+    ax1.set_zlabel('温度 (K)')
+    ax1.set_title(f'芯片温度分布\n({method_name})')
+
+
+    # 温度等值线与热流场
+    ax2 = fig.add_subplot(122)
+    X, Y = np.meshgrid(x, y)
+    # 计算热流场（负温度梯度）
+    Ty, Tx = np.gradient(-T, dx)  # 使用传入的dx
+    # 绘制温度等值线
+    levels = np.linspace(T.min(), T.max(), 15)
+    contour = ax2.contour(X, Y, T, levels=levels, colors='red', linestyles='solid')
+    ax2.clabel(contour, inline=True, fontsize=6)
+    # 绘制热流场流线
+    ax2.streamplot(X, Y, Tx, Ty, density=1.5, color='blue', linewidth=1, arrowsize=1.5)
+    # 标记热源位置
+    heat_source = 100 * np.exp(-((X - 0.5) ** 2 + (Y - 0.7) ** 2) / (2 * 0.1 ** 2))
+    ax2.contour(X, Y, heat_source, levels=[5], colors='black', linestyles='dashed')
+    ax2.text(0.5, 0.7, '热源', fontsize=9, ha='center')
+
+    ax2.set_xlabel('X (m)')
+    ax2.set_ylabel('Y (m)')
+    ax2.set_title(f'温度等值线与热流场\n({method_name})')
+    ax2.set_aspect('equal')
+
+    plt.tight_layout()
+    plt.show()
+
+
+if __name__ == "__main__":
+    # 模拟参数
+    N = 64  # 网格数
+    L = 1.0  # 芯片边长(m)
+    tol = 1e-4  # 收敛容差
+
+    print("求解芯片热传导问题...")
+    print(f"网格尺寸: {N}×{N}，芯片边长: {L}m")
+    print(f"收敛容差: {tol}")
+
+    # 使用Jacobi方法求解，接收dx
+    print("\n1. Jacobi迭代法:")
+    start_time = time.time()
+    T_jacobi, iter_jacobi, conv_jacobi, x, y, dx_jacobi = solve_heat_jacobi(N, L, tol)
+    time_jacobi = time.time() - start_time
+    print(f"   收敛于 {iter_jacobi} 次迭代")
+    print(f"   耗时: {time_jacobi:.3f} 秒")
+
+    # 使用SOR方法求解，接收dx
+    print("\n2. SOR迭代法 (ω=1.8):")
+    start_time = time.time()
+    T_sor, iter_sor, conv_sor, x, y, dx_sor = solve_heat_sor(N, L, 1.8, tol)
+    time_sor = time.time() - start_time
+    print(f"   收敛于 {iter_sor} 次迭代")
+    print(f"   耗时: {time_sor:.3f} 秒")
+
+    # 性能对比
+    print("\n3. 方法性能对比:")
+    print(f"   Jacobi: {iter_jacobi} 次迭代, {time_jacobi:.3f}s")
+    print(f"   SOR:    {iter_sor} 次迭代, {time_sor:.3f}s")
+    print(f"   加速比: 迭代次数 {iter_jacobi / iter_sor:.1f}倍, 时间 {time_jacobi / time_sor:.2f}倍")
+
+    # 绘制温度分布，传递dx
+    plot_temperature(T_jacobi, x, y, dx_jacobi, "Jacobi方法")
+    plot_temperature(T_sor, x, y, dx_sor, "SOR方法")
+
+
+    plt.tight_layout()
+    plt.show()
+
