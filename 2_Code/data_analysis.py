@@ -37,20 +37,23 @@ import matplotlib.pyplot as plt
 from scipy.linalg import solve_banded
 
 # 参数设置
-L = 1.0  # 空间长度
-Nx = 50  # 空间离散点数
-dx = L / (Nx - 1)  # 空间步长
-dt = 0.01  # 时间步长
-T = 1.0  # 总时间
-Nt = int(T / dt)  # 时间步数
-D = 0.01  # 扩散系数
-v = 0.1  # 对流速度
+wave_speed = 1.0       
+space_length = 1.0     
+total_time = 2.0       
+grid_points = 100      
+time_steps = 400       
 
-# 初始条件（高斯分布）
-x = np.linspace(0, L, Nx)
-u0 = np.exp(-((x - L / 2) ** 2) / (2 * 0.1 ** 2))
-u = u0.copy()
+dx = space_length / (grid_points - 1)
+dt = total_time / time_steps
+stability_factor = wave_speed * dt / dx
 
+if stability_factor > 1:
+    raise ValueError("稳定性条件不满足！")  # 验证数值稳定性
+
+# 初始条件：高斯脉冲
+x = np.linspace(0, space_length, grid_points)
+initial_displacement = np.exp(-((x - 0.5)/0.15)**2)  # 初始位移
+initial_velocity = np.zeros_like(x)  # 初始速度为0
 
 # 构建系数矩阵
 def build_coefficients(Nx, dx, dt, D, v):
