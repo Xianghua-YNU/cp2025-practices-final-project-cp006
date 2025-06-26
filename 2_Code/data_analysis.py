@@ -17,44 +17,10 @@ def analyze_convergence(history, method_name):
     print(f"总迭代次数: {iterations}")
     print(f"最终误差: {final_error:.6e}")
     
-    # 计算收敛率（最后10%迭代的平均下降率）
-    if iterations > 10:
-        last_10pct = int(iterations * 0.1)
-        rate = np.mean(np.diff(np.log(history[-last_10pct:])))
-        print(f"收敛率: {rate:.4f} (指数衰减率)")
-    
-    return {
-        'iterations': iterations,
-        'final_error': final_error,
-        'convergence_rate': rate if iterations > 10 else None
-    }
+   
 
 
-#输运方程求解
-
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.linalg import solve_banded
-
-# 参数设置
-wave_speed = 1.0       
-space_length = 1.0     
-total_time = 2.0       
-grid_points = 100      
-time_steps = 400       
-
-dx = space_length / (grid_points - 1)
-dt = total_time / time_steps
-stability_factor = wave_speed * dt / dx
-
-if stability_factor > 1:
-    raise ValueError("稳定性条件不满足！")  # 验证数值稳定性
-
-# 初始条件：高斯脉冲
-x = np.linspace(0, space_length, grid_points)
-initial_displacement = np.exp(-((x - 0.5)/0.15)**2)  # 初始位移
-initial_velocity = np.zeros_like(x)  # 初始速度为0
-
+# 输运方程
 # 构建系数矩阵
 def build_coefficients(Nx, dx, dt, D, v):
     alpha = D * dt / dx ** 2
@@ -243,3 +209,28 @@ plt.grid(True)
 plt.tight_layout()
 plt.savefig('nonhomogeneous_dirichlet_evolution.png')
 plt.show()
+#输运方程求解
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.linalg import solve_banded
+
+# 参数设置
+wave_speed = 1.0       
+space_length = 1.0     
+total_time = 2.0       
+grid_points = 100      
+time_steps = 400       
+
+dx = space_length / (grid_points - 1)
+dt = total_time / time_steps
+stability_factor = wave_speed * dt / dx
+
+if stability_factor > 1:
+    raise ValueError("稳定性条件不满足！")  # 验证数值稳定性
+
+# 初始条件：高斯脉冲
+x = np.linspace(0, space_length, grid_points)
+initial_displacement = np.exp(-((x - 0.5)/0.15)**2)  # 初始位移
+initial_velocity = np.zeros_like(x)  # 初始速度为0
+
