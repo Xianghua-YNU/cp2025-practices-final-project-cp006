@@ -76,7 +76,7 @@ u_current = 2 * u[n] - u[n-1] + stability_factor**2 * (
 # 边界条件：两端固定为0
 u_prev[0], u_prev[-1] = 0, 0
 u_current[[0, -1]] = 0
-2.输运方程隐式格式求解、边界条件处理及稳定性验证研究
+#输运方程隐式格式求解、边界条件处理及稳定性验证研究
 
 import numpy as np
 import matplotlib.pyplot as plt
