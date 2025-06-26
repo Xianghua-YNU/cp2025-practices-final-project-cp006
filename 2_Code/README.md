@@ -7,12 +7,14 @@ README.md`（代码说明书）
 # 芯片热传导数值模拟项目
 
 ## 项目结构
+-  the whole.py:存放完整可运行的代码，方便核验校对
 - `main_simulation.py`: 主程序，控制模拟流程
 - `numerical_methods.py`: 数值求解算法（Jacobi和SOR迭代法）
 - `visualization.py`: 可视化绘图函数
 - `data_analysis.py`: 数据分析工具
 - `utils.py`: 辅助工具函数
 - `requirements.txt`: 项目依赖
+  
 
 ## 环境配置
 1. 安装Python 3.7+
