@@ -73,7 +73,7 @@ for n in range(1, time_steps-1):
 # （注：主函数最后一步触发可视化，代码见下方“可视化”部分）
 
 
-2.输运方程隐式格式求解、边界条件处理及稳定性验证研究
+#输运方程隐式格式求解、边界条件处理及稳定性验证研究
 
 import numpy as np
 from numerical_methods import solve_heat_equation, build_coefficients
