@@ -105,3 +105,52 @@ def animate(frame):
 
 ani = FuncAnimation(fig, animate, frames=time_steps, interval=10, blit=True, repeat=True)
 plt.show()
+
+
+
+2.输运方程隐式格式求解、边界条件处理及稳定性验证研究
+
+import numpy as np
+from numerical_methods import solve_heat_equation, build_coefficients
+from visualization import plot_concentration_evolution, plot_error_analysis
+from visualization import plot_cfl_verification, plot_nonhomogeneous_boundary
+from utils import setup_font
+
+# 主模拟程序：协调参数设置、数值求解与可视化
+if __name__ == "__main__":
+    # 初始化字体设置
+    setup_font()
+    
+    # 参数设置（添加单位注释）
+    L = 1.0  # 空间长度（m）
+    Nx = 50  # 空间离散点数
+    dx = L / (Nx - 1)  # 空间步长（m）
+    dt = 0.01  # 时间步长（s）
+    T = 1.0  # 总时间（s）
+    Nt = int(T / dt)  # 时间步数
+    D = 0.01  # 扩散系数（m²/s）
+    v = 0.1  # 对流速度（m/s）
+    
+    # 输出模拟参数
+    print("===== 模拟参数 =====")
+    print(f"空间长度: L = {L} m")
+    print(f"离散点数: Nx = {Nx}")
+    print(f"空间步长: dx = {dx:.4f} m")
+    print(f"时间步长: dt = {dt} s")
+    print(f"总时间: T = {T} s")
+    print(f"扩散系数: D = {D} m²/s")
+    print(f"对流速度: v = {v} m/s")
+    print("====================\n")
+    
+    # 初始条件（高斯分布）
+    x = np.linspace(0, L, Nx)
+    u0 = np.exp(-((x - L / 2) **2) / (2 * 0.1** 2))  # 初始浓度分布（kg/m³）
+    
+    # 执行热传导方程求解
+    u_history = solve_heat_equation(Nx, dx, dt, T, D, v, u0)
+    
+    # 执行可视化分析
+    plot_concentration_evolution(x, u_history, Nt, dt)
+    plot_error_analysis(x, u0, Nx, dx, dt, T, D)
+    plot_cfl_verification(x, u0, Nx, dx, T, D, v)
+    plot_nonhomogeneous_boundary(x, u0, Nx, dx, dt, T, D, v)
