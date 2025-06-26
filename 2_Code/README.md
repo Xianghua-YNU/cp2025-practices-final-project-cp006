@@ -48,6 +48,7 @@ pip install -r requirements.txt
 3. **协作开发**：不同模块可由不同人员并行开发
 4. **测试方便**：各模块可独立测试
 ### 芯片热传导项目完整代码预览（方便读者运行复现）
+
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
