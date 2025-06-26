@@ -118,3 +118,140 @@ def animate(frame):
 
 ani = FuncAnimation(fig, animate, frames=time_steps, interval=10, blit=True, repeat=True)
 plt.show()
+
+
+2.输运方程隐式格式求解、边界条件处理及稳定性验证研究
+
+import numpy as np
+import matplotlib.pyplot as plt
+from numerical_methods import solve_heat_equation, build_coefficients
+
+def plot_concentration_evolution(x, u_history, Nt, dt):
+    """绘制浓度分布随时间的演化"""
+    plt.figure(figsize=(10, 6))
+    for i in range(0, Nt + 1, max(Nt // 10, 1)):
+        plt.plot(x, u_history[i], label=f't={i * dt:.2f} s')
+    plt.xlabel('位置 x (m)')
+    plt.ylabel('浓度 u (kg/m$^3$)')
+    plt.title('浓度分布随时间的演化（Crank-Nicolson 方法）')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('concentration_evolution.png')
+    plt.show()
+
+def pure_diffusion_analytical(x, t, D, L=1.0, sigma0=0.1):
+    """纯扩散场景的解析解"""
+    sig = np.sqrt(4 * D * t)
+    if t == 0:
+        return np.exp(-((x - L / 2)** 2) / (2 * sigma0** 2))
+    return np.exp(-((x - L / 2)** 2) / (2 * D * t)) / (sig * np.sqrt(np.pi))
+
+def mse(u_num, u_exact):
+    """计算均方误差"""
+    return np.mean((u_num - u_exact)** 2)
+
+def plot_error_analysis(x, u0, Nx, dx, dt, T, D):
+    """绘制纯扩散场景下的误差分析"""
+    # 重新初始化并求解纯扩散问题（v=0）
+    u = u0.copy()
+    u_history = [u.copy()]
+    v_pure = 0.0
+    a_band_pure = build_coefficients(Nx, dx, dt, D, v_pure)
+    
+    for n in range(1, int(T / dt) + 1):
+        b = u.copy()
+        b[0] = 1
+        b[-1] = 0
+        solution = solve_banded((1, 1), a_band_pure, b)
+        u[:] = solution
+        u_history.append(u.copy())
+    u_history_pure = np.array(u_history)
+    
+    # 计算MSE
+    mse_list = []
+    times = np.arange(0, T + dt, dt)
+    for i, t in enumerate(times):
+        u_exact = pure_diffusion_analytical(x, t, D)
+        mse_val = mse(u_history_pure[i], u_exact)
+        mse_list.append(mse_val)
+    
+    # 绘制误差曲线
+    plt.figure(figsize=(8, 5))
+    plt.plot(times, mse_list, label='MSE', color='blue')
+    plt.xlabel('时间 t (s)')
+    plt.ylabel('均方误差 (MSE) (kg/m$^3$)$^2$')
+    plt.title('纯扩散场景下 Crank-Nicolson 方法的误差分析')
+    plt.yscale('log')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('error_analysis_pure_diffusion.png')
+    plt.show()
+
+def plot_cfl_verification(x, u0, Nx, dx, T, D, v):
+    """验证CFL条件对数值解的影响"""
+    dt_values = [0.1, 0.01, 0.001]  # 包括不稳定的dt=0.1
+    colors = ['red', 'blue', 'green']
+    labels = [f'dt={dt_val} s' for dt_val in dt_values]
+    
+    plt.figure(figsize=(8, 5))
+    for dt_val, color, label in zip(dt_values, colors, labels):
+        # 重新初始化并求解
+        u = u0.copy()
+        u_history = [u.copy()]
+        Nt_val = int(T / dt_val)
+        a_band = build_coefficients(Nx, dx, dt_val, D, v)
+        
+        for n in range(1, Nt_val + 1):
+            b = u.copy()
+            b[0] = 1
+            b[-1] = 0
+            solution = solve_banded((1, 1), a_band, b)
+            u[:] = solution
+            u_history.append(u.copy())
+        
+        u_final = u_history[-1]
+        plt.plot(x, u_final, color=color, label=label)
+    
+    plt.xlabel('位置 x (m)')
+    plt.ylabel('浓度 u (kg/m$^3$)')
+    plt.title('不同时间步长下的稳态浓度分布')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('cfl_condition_verification.png')
+    plt.show()
+
+def plot_nonhomogeneous_boundary(x, u0, Nx, dx, dt, T, D, v):
+    """分析非齐次边界条件的影响"""
+    def linear_dirichlet(t):
+        return t  # 左边界浓度随时间线性增加
+    
+    # 重新初始化并求解非齐次边界问题
+    u = u0.copy()
+    u_history = [u.copy()]
+    a_band = build_coefficients(Nx, dx, dt, D, v)
+    
+    for n in range(1, int(T / dt) + 1):
+        t = n * dt
+        b = u.copy()
+        b[0] = linear_dirichlet(t)  # 左边界u=t
+        b[-1] = 0
+        solution = solve_banded((1, 1), a_band, b)
+        u[:] = solution
+        u_history.append(u.copy())
+    u_history = np.array(u_history)
+    
+    # 绘制浓度演化
+    plt.figure(figsize=(10, 6))
+    for i in range(0, int(T / dt) + 1, max(int(T / dt) // 10, 1)):
+        plt.plot(x, u_history[i], label=f't={i * dt:.2f} s')
+    plt.xlabel('位置 x (m)')
+    plt.ylabel('浓度 u (kg/m$^3$)')
+    plt.title('非齐次 Dirichlet 边界条件下浓度分布随时间的演化')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('nonhomogeneous_dirichlet_evolution.png')
+    plt.show()
